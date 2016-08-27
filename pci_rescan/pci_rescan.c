@@ -50,9 +50,10 @@ int
 perform_pci_rescan(void *data)
 {
 	char val = 1;
-	scan_info.pcifd = pci_open(PCI_SCAN_FILE, 0, O_RDWR);
+	scan_info.pcifd = pci_open(PCI_SCAN_FILE, O_WRONLY, 0644);
 	if (IS_ERR(scan_info.pcifd)) {
-		printk("failed to open %s\n", PCI_SCAN_FILE);
+		printk("failed to open %s %ld\n", PCI_SCAN_FILE, PTR_ERR(scan_info.pcifd));
+		scan_info.task = NULL;
 		do_exit(0);
 		return (-1);
 	}
@@ -87,7 +88,8 @@ pci_exit_module(void)
 	if (!IS_ERR(scan_info.pcifd)) {
 		filp_close(scan_info.pcifd, NULL);
 	}
-	if (!IS_ERR(scan_info.task)) {
+	//if (!IS_ERR(scan_info.task)) {
+	if (scan_info.task) {
 		kthread_stop(scan_info.task);
 	}
 }
