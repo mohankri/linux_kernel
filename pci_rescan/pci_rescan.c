@@ -42,15 +42,27 @@ pci_open(const char *path, int flags, int mode)
 int
 pci_write(struct file *file, unsigned long long offset, unsigned char *data, unsigned int size)
 {
-	printk("pci write %d %p\n", *data, file);
-	return (0);
+	mm_segment_t	old_fs;
+	int ret;
+	loff_t	pos = offset;
+	old_fs = get_fs();
+	set_fs(get_ds());
+	spin_lock(&file->f_lock);
+	file->f_pos = pos;
+	spin_unlock(&file->f_lock);
+	ret = vfs_write(file, data, size, &pos);
+	// or ret = file->f_op->write(file, data, size, &pos);
+	set_fs(old_fs);
+	printk("pci write %d %d ret %d\n", *data, size, ret);
+	return (ret);
 }
 
 int
 perform_pci_rescan(void *data)
 {
-	char val = 1;
-	scan_info.pcifd = pci_open(PCI_SCAN_FILE, O_WRONLY, 0644);
+	char val[] = "1";
+	//scan_info.pcifd = pci_open(PCI_SCAN_FILE, O_WRONLY, S_IRWXU|S_IRWXG|S_IRWXO);
+	scan_info.pcifd = pci_open(PCI_SCAN_FILE, O_WRONLY, 0777);
 	if (IS_ERR(scan_info.pcifd)) {
 		printk("failed to open %s %ld\n", PCI_SCAN_FILE, PTR_ERR(scan_info.pcifd));
 		scan_info.task = NULL;
@@ -59,7 +71,7 @@ perform_pci_rescan(void *data)
 	}
 	while (!kthread_should_stop()) {
 		ssleep(5);
-		pci_write(scan_info.pcifd, 0, &val, sizeof(int));
+		pci_write(scan_info.pcifd, 0, val, strlen(val));
 	}
 	return (0);
 }
