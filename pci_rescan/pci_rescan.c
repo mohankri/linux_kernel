@@ -5,8 +5,17 @@
 #include <linux/fs.h>
 #include <asm/segment.h>
 #include <asm/uaccess.h>
-//#include <linux
 
+/* 
+ * The current code can be written with following code segment as well.
+ * snippet from pci-sysfs.c
+ *
+ * pci_lock_rescan_remove()
+ * 	while ((b = pci_find_next_bus(b)) != NULL) {
+ *		pci_rescan_bus(b);
+ *      }
+ * pci_unlock_rescan_remove();
+ */
 /*
  * kthread_create: will create a new task_struct with no process address space
  * 		queue it in workqueue for scheduler to invoke it.
