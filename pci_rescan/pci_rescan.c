@@ -79,7 +79,11 @@ perform_pci_rescan(void *data)
 		return (-1);
 	}
 	while (!kthread_should_stop()) {
-		ssleep(5);
+		/*
+		 * ssleep(5);
+         */
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule_timeout(5 * HZ);
 		pci_write(scan_info.pcifd, 0, val, strlen(val));
 	}
 	return (0);
