@@ -5,6 +5,7 @@
 #include <linux/fs.h>
 #include <asm/segment.h>
 #include <asm/uaccess.h>
+#include <linux/interrupt.h>
 
  /*
   * msleep: sleep in msec
@@ -12,7 +13,9 @@
   * ssleep: sleep in second.
   */
 
-
+typedef struct tasklet_data {
+	int cnt;
+} tasklet_data_t;
 
 typedef struct timer_data {
 	int cnt;
@@ -23,6 +26,7 @@ typedef struct timer_data {
 typedef struct timer_rescan {
 	struct task_struct *task;
 	tdata_t	timer;
+	tasklet_data_t	tasklet_data;
 } timer_rescan_t;
 
 timer_rescan_t timer_info;
@@ -35,6 +39,13 @@ timer_rescan_t timer_info;
  * Timer function always run the same CPU that register/re-register it
  * for better cache locality. Timer being asynchronous any data structures
  * need to be protected from concurrent access by atomic variable or spinlock.
+ */
+
+/*
+ * Tasklet resembles kernel timer is someways and always run on CPU that schedules
+ * them. Unlike timer you can't ask kernel to execute tasklet at specified time but
+ * ask to execute at later time chosen by Kernel. This behaviour is especially useful
+ * with interrupt handler. It's executed in context of a soft interrupt.
  */
 
 int
@@ -86,6 +97,13 @@ my_timer_fn(unsigned long data)
 	}
 }
 
+static void
+timer_tasklet(unsigned long data)
+{
+	printk("Tasklet Schedule...\n");
+}
+
+DECLARE_TASKLET(my_tasklet, timer_tasklet, (unsigned long) &timer_info.tasklet_data);
 /*
  * kthread_create or kthread_run.
  * if kthread_run is used you don't have to call wake_up_process.
@@ -103,6 +121,8 @@ timer_init_module(void)
 	timer_info.timer.exp_timer.expires = jiffies + timer_info.timer.delay*HZ;
 
 	add_timer(&timer_info.timer.exp_timer);
+
+	tasklet_schedule(&my_tasklet);
 		
 	timer_info.task = kthread_create(&schedule_timer, NULL, "timer");
 	if (IS_ERR(timer_info.task)) {
@@ -117,6 +137,7 @@ timer_init_module(void)
 void
 timer_exit_module(void)
 {
+	tasklet_kill(&my_tasklet);
 	del_timer(&timer_info.timer.exp_timer);
 	if (timer_info.task) {
 		kthread_stop(timer_info.task);
