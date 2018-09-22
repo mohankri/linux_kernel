@@ -1,4 +1,4 @@
-obj-m += mmap.o
+obj-m += mdriver.o
 KDIR = /lib/modules/`uname -r`/build
 all:
 	$(MAKE) -C $(KDIR) M=$$PWD modules
