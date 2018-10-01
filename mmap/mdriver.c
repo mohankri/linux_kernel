@@ -5,6 +5,9 @@
 #include <linux/debugfs.h>
 #include <linux/slab.h>
 #include <linux/mm.h>  
+#include <asm/segment.h>
+#include <asm/uaccess.h>
+#include <linux/buffer_head.h>
  
 #ifndef VM_RESERVED
 #define  VM_RESERVED   (VM_DONTEXPAND | VM_DONTDUMP)
@@ -15,6 +18,7 @@
 static int *kmalloc_ptr = NULL;
 static int *kmalloc_area = NULL; 
 struct dentry  *file;
+struct file *dumpfile = NULL;
  
 struct mmap_info {
   char *data;
@@ -124,6 +128,10 @@ int mdrv_close(struct inode *inode, struct file *filp)
  
 int mdrv_open(struct inode *inode, struct file *filp)
 {
+  mm_segment_t    oldfs;
+  loff_t  pos = 0;
+  int ret;
+
 #ifdef PRIVATE_PAGE_HANDLER
   struct mmap_info *info = kmalloc(sizeof(struct mmap_info), GFP_KERNEL); 
   info->data = (char *)get_zeroed_page(GFP_KERNEL);
@@ -131,7 +139,7 @@ int mdrv_open(struct inode *inode, struct file *filp)
   //memcpy(info->data + 32, filp->f_path.dentry->name, strlen(filp->f_dentry->d_name.name));
   filp->private_data = info;
 #else
-  char myString[] = "Hello Samiksha Message from Kernel";
+  char myString[] = "Hello Samiksha Message from vfs_write";
   kmalloc_ptr=kmalloc(LEN+2*PAGE_SIZE, GFP_KERNEL);
   kmalloc_area=(int *)(((unsigned long)kmalloc_ptr + PAGE_SIZE -1) & PAGE_MASK);
   memcpy(kmalloc_area, myString, strlen(myString));
@@ -141,6 +149,19 @@ int mdrv_open(struct inode *inode, struct file *filp)
   printk(KERN_INFO "Allocate kmalloc %p\n", kmalloc_area);
 #endif
 
+  oldfs   = get_fs();
+  set_fs(get_ds());
+
+  spin_lock(&dumpfile->f_lock);
+  dumpfile->f_pos = pos;
+  spin_unlock(&dumpfile->f_lock);
+
+  ret = vfs_write(dumpfile, (unsigned char *)kmalloc_ptr,
+						LEN+2*PAGE_SIZE, &pos);
+  if (ret < 0) {
+  	printk(KERN_INFO "VFS write failed %p\n", kmalloc_ptr);
+  }
+  set_fs(oldfs); 
   return 0;
 }
  
@@ -152,13 +173,21 @@ static const struct file_operations mdrv_fops = {
  
 static int __init mdrv_init(void)
 {
+  mm_segment_t    oldfs;
   file = debugfs_create_file("mdriver", 0644, NULL, NULL, &mdrv_fops);
+  oldfs   = get_fs();
+  set_fs(get_ds());
+  dumpfile = filp_open("/tmp/mmap.bin", O_CREAT|O_RDWR,
+					S_IRWXU|S_IRWXG|S_IRWXO);
+  set_fs(oldfs);
+  //return (filp);
   return 0;
 }
  
 static void __exit mdrv_exit(void)
 {
   debugfs_remove(file);
+  filp_close(dumpfile, NULL);
 }
  
 module_init(mdrv_init);
