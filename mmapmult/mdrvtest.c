@@ -24,7 +24,9 @@ int main ( int argc, char **argv )
         return -1;
     }
     memcpy(result, address, 20);
-    printf("msg: %d\n", result[0]);
+    printf("msg: %x\n", result[0]);
+    printf("msg: %x\n", result[1]);
+    printf("msg: %x\n", result[2]);
 #endif
 #if 0
     int ret = read(fd, result, 2*PAGE_SIZE);
