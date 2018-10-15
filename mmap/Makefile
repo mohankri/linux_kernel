@@ -10,5 +10,5 @@ clean:
 install:
 	$(MAKE) -C $(KDIR) M=$$PWD modules_install
 
-mdrvtest: mdrvtest
+mdrv: mdrvtest
 	gcc -o mdrvtest mdrvtest.c

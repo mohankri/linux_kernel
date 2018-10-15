@@ -13,9 +13,11 @@
 #define  VM_RESERVED   (VM_DONTEXPAND | VM_DONTDUMP)
 #endif
 
-#define LEN (64*1024)
+#define LEN (4*1024*1024)
 
-static int *kmalloc_ptr = NULL;
+#define NUM_ALLOC	40
+
+static int *kmalloc_ptr[NUM_ALLOC] = {NULL};
 static int *kmalloc_area = NULL; 
 struct dentry  *file;
 struct file *dumpfile = NULL;
@@ -62,6 +64,24 @@ struct vm_operations_struct mdrv_pghdlr_ops = {
   .close =    mdrv_pghdlr_close,
   .fault =    mdrv_pghdlr_fault,    
 };
+
+int mdrv_mmap_pages(struct file *filep, struct vm_area_struct *vma)
+{
+    unsigned int size = (vma->vm_end - vma->vm_start);
+    unsigned addr;
+    int i;
+    int rc = 0;
+    printk(KERN_INFO "mmap multi pages  ...%ld\n", size);
+    for (i = 0; i < NUM_ALLOC; i++) {
+        addr = vma->vm_start + (i*LEN);
+        if (vm_insert_page(vma, addr, kmalloc_ptr[i]) < 0) {
+            printk("Failed to insert pages...\n");
+            rc = -1;
+            break;
+        }
+    }
+    return rc; 
+}
  
 int mdrv_mmap(struct file *filp, struct vm_area_struct *vma)
 {
@@ -77,7 +97,6 @@ int mdrv_mmap(struct file *filp, struct vm_area_struct *vma)
   unsigned long offset = vma->vm_pgoff<<PAGE_SHIFT;
   unsigned long size = vma->vm_end - vma->vm_start;
 
-  printk(KERN_INFO " New One MMAP CAlled ...\n");
 
   if (offset & ~PAGE_MASK) {
     printk("offset not aligned: %ld\n", offset);
@@ -114,13 +133,16 @@ int mdrv_mmap(struct file *filp, struct vm_area_struct *vma)
  
 int mdrv_close(struct inode *inode, struct file *filp)
 {
+   int i;
 #ifdef PRIVATE_PAGE_HANDLER
    struct mmap_info *info = filp->private_data;
    free_page((unsigned long)info->data);
    kfree(info);
 #else
-   void *info =  filp->private_data;
-   kfree(info);
+   for (i = 0; i < NUM_ALLOC; i++) { 
+       printk("%d) Free allocated %p\n", i, kmalloc_ptr[i]);
+       kfree(kmalloc_ptr[i]);
+   }
 #endif
    filp->private_data = NULL;
    return 0;
@@ -130,7 +152,7 @@ int mdrv_open(struct inode *inode, struct file *filp)
 {
   mm_segment_t    oldfs;
   loff_t  pos = 0;
-  int ret;
+  int ret, i;
 
 #ifdef PRIVATE_PAGE_HANDLER
   struct mmap_info *info = kmalloc(sizeof(struct mmap_info), GFP_KERNEL); 
@@ -140,15 +162,24 @@ int mdrv_open(struct inode *inode, struct file *filp)
   filp->private_data = info;
 #else
   char myString[] = "Hello Samiksha Message from vfs_write";
-  kmalloc_ptr=kmalloc(LEN+2*PAGE_SIZE, GFP_KERNEL);
-  kmalloc_area=(int *)(((unsigned long)kmalloc_ptr + PAGE_SIZE -1) & PAGE_MASK);
+
+  for (i = 0; i < NUM_ALLOC; i++) { 
+      kmalloc_ptr[i]=kmalloc(LEN, GFP_KERNEL);
+      if (kmalloc_ptr[i] == NULL) {
+          printk(KERN_INFO "Allocate failed %d\n", i);
+      } else {
+          printk("Allocated %p\n", kmalloc_ptr[i]);
+      }
+  }
+  kmalloc_area = kmalloc_ptr[0];
+  //kmalloc_area=(int *)(((unsigned long)kmalloc_ptr + PAGE_SIZE -1) & PAGE_MASK);
   memcpy(kmalloc_area, myString, strlen(myString));
 
-  /* assign this info struct to the file */
-  filp->private_data = kmalloc_area;
   printk(KERN_INFO "Allocate kmalloc %p\n", kmalloc_area);
+
 #endif
 
+#ifdef WRITE_FILE
   oldfs   = get_fs();
   set_fs(get_ds());
 
@@ -162,24 +193,38 @@ int mdrv_open(struct inode *inode, struct file *filp)
   	printk(KERN_INFO "VFS write failed %p\n", kmalloc_ptr);
   }
   set_fs(oldfs); 
+#endif
+
   return 0;
+}
+
+
+ssize_t
+mdrv_read(struct file *filp, char *buf, size_t count, loff_t *f_pos) {
+  /* Transfering data to user space */
+  int retval = copy_to_user(buf,kmalloc_ptr,count);
+  printk("copy_to_user returned (%d)", retval);
+  return count;
 }
  
 static const struct file_operations mdrv_fops = {
   .open = mdrv_open,
   .release = mdrv_close,
   .mmap = mdrv_mmap,
+  .read = mdrv_read,
 };
  
 static int __init mdrv_init(void)
 {
   mm_segment_t    oldfs;
   file = debugfs_create_file("mdriver", 0644, NULL, NULL, &mdrv_fops);
+#ifdef WRITE_FILE
   oldfs   = get_fs();
   set_fs(get_ds());
   dumpfile = filp_open("/tmp/mmap.bin", O_CREAT|O_RDWR,
 					S_IRWXU|S_IRWXG|S_IRWXO);
   set_fs(oldfs);
+#endif
   //return (filp);
   return 0;
 }
@@ -187,7 +232,9 @@ static int __init mdrv_init(void)
 static void __exit mdrv_exit(void)
 {
   debugfs_remove(file);
+#ifdef WRITE_FILE 
   filp_close(dumpfile, NULL);
+#endif
 }
  
 module_init(mdrv_init);
