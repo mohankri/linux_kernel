@@ -1,4 +1,5 @@
 obj-m += mdriver.o
+EXTRA_CFLAGS += -g -DDEBUG
 KDIR = /lib/modules/`uname -r`/build
 all: mdrvtest
 	$(MAKE) -C $(KDIR) M=$$PWD modules
@@ -11,4 +12,4 @@ install:
 	$(MAKE) -C $(KDIR) M=$$PWD modules_install
 
 mdrv: mdrvtest
-	gcc -o mdrvtest mdrvtest.c
+	gcc -g -o mdrvtest mdrvtest.c

@@ -13,10 +13,9 @@
 #define  VM_RESERVED   (VM_DONTEXPAND | VM_DONTDUMP)
 #endif
 
-#define LEN (4*1024*1024)
-//#define	ORDER	10
-#define	ORDER	0
-#define NUM_ALLOC	1
+//#define	ORDER	10	//4MB
+#define	ORDER	1
+#define NUM_ALLOC	1 //4MB * 2 total = 8MB
 
 struct dentry *file;
 struct file *dumpfile = NULL;
@@ -29,24 +28,37 @@ mdrv_mmap_pages(struct file *filep, struct vm_area_struct *vma)
 {
     unsigned int size = (vma->vm_end - vma->vm_start);
     unsigned long addr;
-    unsigned long pgbuf;
+    char *pgbuf;
     int i;
     int rc = 0;
     struct page *pg;
+    unsigned long offset = 0;
+    unsigned long bufSize = PAGE_SIZE * (1 << ORDER);
     printk(KERN_INFO "mmap multi pages  ...%d\n", size);
     printk(KERN_INFO "vm_end %lu vm_start %lu\n", vma->vm_end, vma->vm_start);
+    printk(KERN_INFO "buffer Size %lu\n", bufSize);
     vma->vm_flags |= VM_LOCKED;
     vma->vm_flags |= VM_RESERVED;
     vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 
     for (i = 0; i < NUM_ALLOC; i++) {
+        offset = PAGE_SIZE * (i * (1 << ORDER));
+	printk("Next Offset %d \n", offset);
         /*pg = alloc_page(GFP_KERNEL);  */
         pg = page_ptr[i];
         //pgbuf = (unsigned long)page_to_virt(pg);
-        pgbuf = (unsigned long)__va(page_to_phys(pg));
-       	pgbuf = 0xDEADBEEF;
-        printk("Value Wrote...%lx \n", pgbuf);
-        addr = vma->vm_start + (i*(PAGE_SIZE*ORDER));
+        pgbuf = (char *)__va(page_to_phys(pg));
+       	//pgbuf = 0xDEADBEEF;
+	if (i == 0) {
+		strcpy(pgbuf, "0 Page");
+		strcpy(pgbuf+(bufSize-6), "HiHi");
+                //strcpy(pgbuf+4194300, "Hi");
+	} else {
+		strcpy(pgbuf, "1 Page");
+	}
+        printk("Value Wrote...%s\n", pgbuf);
+        //addr = vma->vm_start + (i*(PAGE_SIZE)); //FACTOR ORDER
+        addr = vma->vm_start + offset; //FACTOR ORDER
         rc = vm_insert_page(vma, addr, pg);
         if (rc < 0) {
             printk("Failed to insert pages...%d \n", rc);
@@ -81,7 +93,7 @@ mdrv_open(struct inode *inode, struct file *filp)
   char myString[] = "Hello Samiksha Message from vfs_write";
 
   for (i = 0; i < NUM_ALLOC; i++) { 
-      page_ptr[i]=alloc_pages(GFP_KERNEL, ORDER);
+      page_ptr[i]=alloc_pages(GFP_KERNEL|__GFP_COMP, ORDER);
       //page_ptr[i]=alloc_page(GFP_KERNEL);
       if (page_ptr[i] == NULL) {
           printk(KERN_INFO "Allocate failed %d\n", i);
